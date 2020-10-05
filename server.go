@@ -1,125 +1,100 @@
 package main
 
 import (
-	"github.com/Kamva/mgm"
+	"context"
+	"fmt"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"user/user"
+	"hello"
+	"log"
+	"net/http"
+	"strconv"
 )
 
-func init() {
-	_ = mgm.SetDefaultConfig(nil, "check_echo", options.Client().ApplyURI("mongodb+srv://sdw:1q2w3e!%40#@cluster0.cl17y.mongodb.net/test?retryWrites=true&w=majority"))
-}
-
-func main() {
-	e := echo.New()
-	e.Debug = true
-
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-
-	sample_echo := e.Group("/user")
-	{
-		sample_echo.POST("", user.Create)
+type (
+	user struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
 	}
+)
 
-	e.Logger.Fatal(e.Start(":1323"))
-}
+var (
+	users = map[int]*user{}
+	seq   = 1
+)
 
-/*
+//----------
+// Handlers
+//----------
 
-func main() {
-	clientOptions := options.Client().ApplyURI("mongodb+srv://sdw:1q2w3e!%40#@cluster0.cl17y.mongodb.net/test?retryWrites=true&w=majority")
-
-	//fmt.Println("clientOptions TYPE : ", reflect.TypeOf(clientOptions), "\n")
-
-	client, err := mongo.Connect(context.TODO(), clientOptions)
-
-	if err != nil {
-		//fmt.Println("mongo.Connect() ERROR : ", err)
-		os.Exit(1)
+func createUser(c echo.Context) error {
+	u := &user{
+		ID: seq,
 	}
-
-	ctx, _ := context.WithTimeout(context.Background(), 15*time.Second)
-	col := client.Database("test").Collection("user")
-	//fmt.Println("Collection type : ", reflect.TypeOf(col), "\n")
-
-	oneDoc := MongoFields{
-		FeildStr: "test2",
-		FeildInt: 32,
+	if err := c.Bind(u); err != nil {
+		return err
 	}
-
-	add(col, ctx, oneDoc)
-
-	e := echo.New()
-	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello World!")
-	})
-
-	e.GET("/users/:id", getUser)
-
-	e.GET("/show", show)
-
-	e.GET("/setUser", setUser)
-
-	e.Logger.Fatal(e.Start(":1323"))
-}
-
-type MongoFields struct {
-	FeildStr string
-	FeildInt int
-}
-
-type User struct {
-	name string
-	age  string
-}
-
-func add(col *mongo.Collection, ctx context.Context, oneDoc MongoFields) {
-	result, insertErr := col.InsertOne(ctx, oneDoc)
-
-	if insertErr != nil {
-		fmt.Println("InsertOne  ERROR : ", insertErr)
-		os.Exit(1)
-	} else {
-		fmt.Println("InsertOne() result type : ", reflect.TypeOf(result))
-		newID := result.InsertedID
-		fmt.Println("InsertOne() newID : ", newID)
-	}
+	users[u.ID] = u
+	seq++
+	return c.JSON(http.StatusCreated, u)
 }
 
 func getUser(c echo.Context) error {
-	id := c.Param("id")
-	return c.String(http.StatusOK, id)
+	id, _ := strconv.Atoi(c.Param("id"))
+	return c.JSON(http.StatusOK, users[id])
 }
 
-func setUser(c echo.Context) error {
-	user := User{
-		name: c.QueryParam("name"),
-		age:  c.QueryParam("age"),
+func updateUser(c echo.Context) error {
+	u := new(user)
+	if err := c.Bind(u); err != nil {
+		return err
 	}
+	id, _ := strconv.Atoi(c.Param("id"))
+	users[id].Name = u.Name
+	return c.JSON(http.StatusOK, users[id])
+}
 
+func deleteUser(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+	delete(users, id)
+	return c.NoContent(http.StatusNoContent)
+}
+
+func main() {
+	e := echo.New()
+
+	// Middleware
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+
+	// Routes
+	e.POST("/users", createUser)
+	e.GET("/users/:id", getUser)
+	e.PUT("/users/:id", updateUser)
+	e.DELETE("/users/:id", deleteUser)
+
+	// Start server
+	e.Logger.Fatal(e.Start(":1323"))
+
+	//MongoDB
+	// Set client options
 	clientOptions := options.Client().ApplyURI("mongodb+srv://sdw:1q2w3e!%40#@cluster0.cl17y.mongodb.net/test?retryWrites=true&w=majority")
 
-	//fmt.Println("clientOptions TYPE : ", reflect.TypeOf(clientOptions), "\n")
-
+	// Connect to MongoDB
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 
 	if err != nil {
-		//fmt.Println("mongo.Connect() ERROR : ", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), 15*time.Second)
-	col := client.Database("test").Collection("user")
+	// Check the connection
+	err = client.Ping(context.TODO(), nil)
 
-	return user
-}
+	if err != nil {
+		log.Fatal(err)
+	}
 
-func show(c echo.Context) error {
-	team := c.QueryParam("team")
-	member := c.QueryParam("member")
-	return c.String(http.StatusOK, "team:"+team+", member:"+member)
+	fmt.Println("Connected to MongoDB!")
 }
-*/
